@@ -56,12 +56,12 @@ if __name__ == '__main__':
 	parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
 	parser.add_argument('--norm', type=str, default='instance', help='instance normalization or batch normalization')
 	parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-	parser.add_argument('--niter', type=int, default=100, help='# of iter at starting learning rate')
+	parser.add_argument('--niter', type=int, default=5, help='# of iter at starting learning rate')
 	parser.add_argument('--niter_decay', type=int, default=100, help='# of iter to linearly decay learning rate to zero')
 
-	# parser.add_argument("--data_directory", type=str, default="/media/rainier/rubel/projects/virtual-try-on/dataset/", help="path to the directory having images for training.")
+	parser.add_argument("--data_directory", type=str, default="/media/rainier/rubel/projects/virtual-try-on/dataset/lip_dataset/", help="path to the directory having images for training.")
 	# parser.add_argument("--data_directory", type=str, default="/media/tensor/EXTDRIVE/projects/virtual-try-on/dataset/zalando_final/", help="path to the directory having images for training.")	
-	parser.add_argument("--data_directory", type=str, default="/media/tensor/EXTDRIVE/projects/virtual-try-on/dataset/lip_mpv_dataset/", help="path to the directory having images for training.")
+	# parser.add_argument("--data_directory", type=str, default="/media/tensor/EXTDRIVE/projects/virtual-try-on/dataset/lip_mpv_dataset/", help="path to the directory having images for training.")
 	parser.add_argument('--continue_train', action='store_true', help='continue training: load the latest model')
 	parser.add_argument('--load_pretrain', type=str, default='', help='load the pretrained model from the specified location')
 	parser.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
@@ -83,7 +83,7 @@ if __name__ == '__main__':
 
 
 	# for generator
-	parser.add_argument('--netG_input_nc', type=int, default=22, help="# of input channels to the generator")
+	# parser.add_argument('--netG_input_nc', type=int, default=22, help="# of input channels to the generator")
 	parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
 	parser.add_argument('--netG', type=str, default='global', help='selects model to use for netG')
 	parser.add_argument('--n_downsample_global', type=int, default=2, help='number of downsampling layers in netG') 
@@ -107,6 +107,6 @@ if __name__ == '__main__':
 	# loss arguments
 	parser.add_argument('--lambda_tex', type=float, default=1.0, help='lambda value for feature/texture loss in total loss')
 	parser.add_argument('--lambda_adv', type=float, default=1.0, help='lambda value for adversarial loss in total loss')
-	parser.add_argument('--lambda_vgg', type=float, default=5.0, help='lambda value for vgg loss in total loss')    
+	parser.add_argument('--lambda_vgg', type=float, default=10.0, help='lambda value for vgg loss in total loss')    
 
 	main(parser.parse_args())

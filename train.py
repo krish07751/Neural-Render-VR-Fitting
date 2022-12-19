@@ -60,9 +60,11 @@ def train(config):
 	# initializng the model
 	model = create_model.CreateModel(config)
 	if config.args.is_train and len(config.args.gpu_ids):
-		model = torch.nn.DataParallel(model, device_ids=config.args.gpu_ids)
+		pass
+		# model = torch.nn.DataParallel(model, device_ids=config.args.gpu_ids)
 
-	optimizer_feature, optimizer_G, optimizer_D = model.module.optimizer_feature, model.module.optimizer_G, model.module.optimizer_D
+	# optimizer_feature, optimizer_G, optimizer_D = model.module.optimizer_feature, model.module.optimizer_G, model.module.optimizer_D
+	optimizer_feature, optimizer_G, optimizer_D = model.optimizer_feature, model.optimizer_G, model.optimizer_D
 
 
 	# initializing the visualization option
@@ -86,103 +88,115 @@ def train(config):
 		if epoch != start_epoch:
 			epoch_iter = epoch_iter % dataset_size	# reinitializing the current epoch iterations after every epoch
 		for idx, batch in enumerate(train_loader):
+			with torch.autograd.set_detect_anomaly(True):
+				total_steps += config.args.batch_size
+				epoch_iter += config.args.batch_size
+				
+				feature_loss, loss_D, loss_G_GAN, loss_G_VGG, rendered_image, src_img, tgt_img, src_feat_rendered_on_tgt, tgt_feat_rendered_on_tgt = model(batch)
 
-			total_steps += config.args.batch_size
-			epoch_iter += config.args.batch_size
-			
-			feature_loss, loss_D, loss_G_GAN, loss_G_VGG, rendered_image, src_img, tgt_img, src_feat_rendered_on_tgt, tgt_feat_rendered_on_tgt = model(batch)
+				feature_loss = torch.mean(feature_loss)
+				loss_D = torch.mean(loss_D)
+				loss_G_GAN = torch.mean(loss_G_GAN)
+				loss_G_VGG = torch.mean(loss_G_VGG)
 
-			feature_loss = torch.mean(feature_loss)
-			loss_D = torch.mean(loss_D)
-			loss_G_GAN = torch.mean(loss_G_GAN)
-			loss_G_VGG = torch.mean(loss_G_VGG)
+				 # calculate final loss scalar
+				# loss_G = config.args.lambda_tex * feature_loss + config.args.lambda_adv * loss_G_GAN + config.args.lambda_vgg * loss_G_VGG
+				feature_loss = config.args.lambda_tex * feature_loss
+				loss_G = config.args.lambda_adv * loss_G_GAN + config.args.lambda_vgg * loss_G_VGG
 
-			 # calculate final loss scalar
-			loss_G = config.args.lambda_tex * feature_loss + config.args.lambda_adv * loss_G_GAN + config.args.lambda_vgg * loss_G_VGG
-			# loss_G = config.args.lambda_tex * feature_loss + config.args.lambda_adv * loss_G_GAN
+				feature_loss_meter.update(feature_loss.item(), config.args.batch_size)
+				loss_D_meter.update(loss_D.item(), config.args.batch_size)
+				loss_G_GAN_meter.update(loss_G_GAN.item(), config.args.batch_size)
+				loss_G_VGG_meter.update(loss_G_VGG.item(), config.args.batch_size)
+				loss_G_meter.update(loss_G.item(), config.args.batch_size)
 
-			feature_loss_meter.update(feature_loss.item(), config.args.batch_size)
-			loss_D_meter.update(loss_D.item(), config.args.batch_size)
-			loss_G_GAN_meter.update(loss_G_GAN.item(), config.args.batch_size)
-			loss_G_VGG_meter.update(loss_G_VGG.item(), config.args.batch_size)
-			loss_G_meter.update(loss_G.item(), config.args.batch_size)
+				############### Backward Pass ####################
+				optimizer_G.zero_grad()
+				optimizer_feature.zero_grad()
+				optimizer_D.zero_grad()
 
-			############### Backward Pass ####################
-			optimizer_G.zero_grad()
-			optimizer_feature.zero_grad()
-			optimizer_D.zero_grad()
-			
-			# update generator weights
-			loss_G.backward(retain_graph=True)          
-			optimizer_G.step()
-			
-			# update feature-net weights
-			optimizer_feature.step()
-			
-			# update discriminator weights
-			loss_D.backward        
-			optimizer_D.step()
+				# update generator weights
+				loss_G.backward(retain_graph=True)          
+				optimizer_G.step()
 
-			### print out errors
-			if total_steps % config.args.print_freq == print_delta:
-				print("Train Progress--\t"
-					"Train Epoch: {} [{}/{}]\t"
-					"generator Loss:{:.4f} ({:.4f})\t"
-					"Discriminator Loss:{:.4f} ({:.4f})\t"
+				# update feature-net weights
+				feature_loss.backward(retain_graph=True)
+				optimizer_feature.step()
+				
+				# update discriminator weights
+				loss_D.backward        
+				optimizer_D.step()
 
-					
-					"feature Loss:{:.4f} ({:.4f})\t"
-					"Adversarial Loss:{:.4f} ({:.4f})\t"
-					"Vgg Loss:{:.4f} ({:.4f})".format(epoch, epoch_iter, dataset_size,
-																loss_G_meter.val, loss_G_meter.avg,
-																loss_D_meter.val, loss_D_meter.avg,
-																feature_loss_meter.val, feature_loss_meter.avg,
-																loss_G_GAN_meter.val, loss_G_GAN_meter.avg,
-																loss_G_VGG_meter.val, loss_G_VGG_meter.avg))
-				print("\n")
+				### print out errors
+				if total_steps % config.args.print_freq == print_delta:
+					print("Train Progress--\t"
+						"Train Epoch: {} [{}/{}]\t"
+						"generator Loss:{:.4f} ({:.4f})\t"
+						"Discriminator Loss:{:.4f} ({:.4f})\t"
 
-			if total_steps % config.args.display_freq == display_delta:
-				fake_image = rendered_image[0].cpu().detach()
-				src_on_tgt = src_feat_rendered_on_tgt[0,:3,:,:].cpu().detach()
-				tgt_on_tgt = tgt_feat_rendered_on_tgt[0,:3,:,:].cpu().detach()
+						
+						"feature Loss:{:.4f} ({:.4f})\t"
+						"Adversarial Loss:{:.4f} ({:.4f})\t"
+						"Vgg Loss:{:.4f} ({:.4f})".format(epoch, epoch_iter, dataset_size,
+																	loss_G_meter.val, loss_G_meter.avg,
+																	loss_D_meter.val, loss_D_meter.avg,
+																	feature_loss_meter.val, feature_loss_meter.avg,
+																	loss_G_GAN_meter.val, loss_G_GAN_meter.avg,
+																	loss_G_VGG_meter.val, loss_G_VGG_meter.avg))
+					print("\n")
 
-				src_on_tgt_masked = src_feat_rendered_on_tgt[0,-3:,:,:].cpu().detach()
-				tgt_on_tgt_masked = tgt_feat_rendered_on_tgt[0,-3:,:,:].cpu().detach()
+				if total_steps % config.args.display_freq == display_delta:
+					fake_image = rendered_image[0].cpu().detach()
+					src_on_tgt = src_feat_rendered_on_tgt[0,:3,:,:].cpu().detach()
+					tgt_on_tgt = tgt_feat_rendered_on_tgt[0,:3,:,:].cpu().detach()
 
-				visuals = OrderedDict([("source_image", tensor2im(src_img[0])),
-										("target_image", tensor2im(tgt_img[0])),
-										("rendered_image", tensor2im(fake_image)),
-										("src on tgt", tensor2im(src_on_tgt)),
-										("tgt on tgt", tensor2im(tgt_on_tgt)),
-										("src on tgt masked", tensor2im(src_on_tgt_masked)),
-										("tgt on tgt masked", tensor2im(tgt_on_tgt_masked)),
-										("source texture", tensor2im(batch[2][0]))])
+					src_on_tgt_masked = src_feat_rendered_on_tgt[0,-3:,:,:].cpu().detach()
+					tgt_on_tgt_masked = tgt_feat_rendered_on_tgt[0,-3:,:,:].cpu().detach()
 
-				visualizer.display_current_results(visuals, epoch, total_steps)
+					visuals = OrderedDict([("source_image", tensor2im(src_img[0])),
+											("target_image", tensor2im(tgt_img[0])),
+											("rendered_image", tensor2im(fake_image)),
+											("src on tgt", tensor2im(src_on_tgt)),
+											("tgt on tgt", tensor2im(tgt_on_tgt)),
+											("src on tgt masked", tensor2im(src_on_tgt_masked)),
+											("tgt on tgt masked", tensor2im(tgt_on_tgt_masked)),
+											("source texture", tensor2im(batch[2][0]))])
 
-			### save latest model
-			if total_steps % config.args.save_latest_freq == save_delta:
-				print('saving the latest model (epoch %d, total_steps %d)' % (epoch, total_steps))
-				model.module.render_net.save('latest')
-				model.module.save_feature_net("latest")            
-				np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
+					visualizer.display_current_results(visuals, epoch, total_steps)
+
+				### save latest model
+				# if total_steps % config.args.save_latest_freq == save_delta:
+				# 	print('saving the latest model (epoch %d, total_steps %d)' % (epoch, total_steps))
+				# 	# model.module.render_net.save('latest')
+				# 	# model.module.save_feature_net("latest") 
+
+				# 	model.render_net.save('latest')
+				# 	model.save_feature_net("latest")            
+				# 	np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
 
 
 		### save model for this epoch
-		if epoch % config.args.save_epoch_freq == 0:
-			print('saving the model at the end of epoch %d, iters %d' % (epoch, total_steps))        
+		# if epoch % config.args.save_epoch_freq == 0:
+		# 	print('saving the model at the end of epoch %d, iters %d' % (epoch, total_steps))        
 			
-			model.module.render_net.save('latest')
-			model.module.save_feature_net("latest")            
+		# 	# model.module.render_net.save('latest')
+		# 	# model.module.save_feature_net("latest")            
 
-			model.module.render_net.save(epoch)
-			model.module.save_feature_net(epoch)
+		# 	# model.module.render_net.save(epoch)
+		# 	# model.module.save_feature_net(epoch)
 
-			np.savetxt(iter_path, (epoch+1, 0), delimiter=',', fmt='%d')
+		# 	model.render_net.save('latest')
+		# 	model.save_feature_net("latest")            
 
-		### linearly decay learning rate after certain iterations
+		# 	model.render_net.save(epoch)
+		# 	model.save_feature_net(epoch)
+
+		# 	np.savetxt(iter_path, (epoch+1, 0), delimiter=',', fmt='%d')
+
+		## linearly decay learning rate after certain iterations
 		if epoch > config.args.niter:
-			model.module.update_learning_rate()
+			# model.module.update_learning_rate()
+			model.update_learning_rate()
 
 
 
